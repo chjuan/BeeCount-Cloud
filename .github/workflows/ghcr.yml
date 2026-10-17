@@ -138,7 +138,6 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Notify Feishu
-        # 无论构建成功/失败都通知；没配 secret 时自动跳过，不会让 workflow 变红。
         if: always()
         env:
           WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}
@@ -155,18 +154,11 @@ jobs:
           if [ "$STATUS" = "success" ]; then
             title="✅ BeeCount-Cloud 镜像发布成功"
             color="green"
-            text="**版本**: \`$VERSION\`
-**镜像**: \`$IMAGE_NAME:$VERSION\` / \`$IMAGE_NAME:latest\`
-**架构**: \`$PLATFORMS\`
-**仓库**: [$REPO](https://github.com/$REPO)
-[查看构建详情]($RUN_URL)"
+            text=$(printf '**版本**: `%s`\n**镜像**: `%s:%s` / `%s:latest`\n**架构**: `%s`\n**仓库**: [%s](https://github.com/%s)\n[查看构建详情](%s)' "$VERSION" "$IMAGE_NAME" "$VERSION" "$IMAGE_NAME" "$PLATFORMS" "$REPO" "$REPO" "$RUN_URL")
           else
             title="❌ BeeCount-Cloud 镜像发布失败"
             color="red"
-            text="**版本**: \`$VERSION\`
-**仓库**: [$REPO](https://github.com/$REPO)
-若测试或类型检查失败，请检查补丁是否与上游冲突
-[查看失败日志]($RUN_URL)"
+            text=$(printf '**版本**: `%s`\n**仓库**: [%s](https://github.com/%s)\n若测试或类型检查失败，请检查补丁是否与上游冲突\n[查看失败日志](%s)' "$VERSION" "$REPO" "$REPO" "$RUN_URL")
           fi
           payload=$(jq -n \
             --arg title "$title" \
