@@ -48,8 +48,8 @@ jobs:
           if [ -n "$INPUT_TAG" ]; then
             LATEST="$INPUT_TAG"
           else
-            # 上游最新 tag（排除我们自己的 -tzfix 后缀）
-            LATEST=$(git tag --list --sort=-v:refname | grep -v -- "-${PATCH_SUFFIX}$" | head -1)
+            # 上游最新 tag（排除所有含 tzfix 的 tag，包括 -tzfix / -tzfix.1 等）
+            LATEST=$(git tag --list --sort=-v:refname | grep -v "${PATCH_SUFFIX}" | head -1)
           fi
           if [ -z "$LATEST" ]; then
             echo "No upstream tags found"
