@@ -149,6 +149,8 @@ jobs:
           NEEDED: ${{ steps.need.outputs.needed }}
           BUILD_DO: ${{ steps.build.outputs.do }}
           UP_TIP: ${{ steps.need.outputs.up_tip }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "$WEBHOOK" ]; then
             echo "FEISHU_WEBHOOK_URL not configured, skipping notification"
@@ -157,18 +159,33 @@ jobs:
           if [ "$STATUS" != "success" ]; then
             title="❌ BeeCount-Cloud nightly 失败"
             color="red"
-            text="状态: $STATUS\n上游 tip: ${UP_TIP:0:10}\n仓库: ${{ github.repository }}\n若是 rebase 冲突，请到 dev 分支手动解决后重跑\n详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            text="**状态**: \`$STATUS\`
+**上游 tip**: \`${UP_TIP:0:10}\`
+**仓库**: [$REPO](https://github.com/$REPO)
+若是 rebase 冲突，请到 dev 分支手动解决后重跑
+[查看失败日志]($RUN_URL)"
           elif [ "$BUILD_DO" = "false" ]; then
             title="🌙 BeeCount-Cloud nightly（无变化）"
             color="blue"
-            text="上游无新提交，跳过构建\n上游 tip: ${UP_TIP:0:10}\n仓库: ${{ github.repository }}"
+            text="上游无新提交，跳过构建
+**上游 tip**: \`${UP_TIP:0:10}\`
+**仓库**: [$REPO](https://github.com/$REPO)"
           else
             title="🌙 BeeCount-Cloud nightly 构建成功"
             color="green"
             if [ "$NEEDED" = "true" ]; then
-              text="版本: $VERSION\n已 rebase 到上游最新并发布\n镜像: $IMAGE_NAME:$VERSION\n      $IMAGE_NAME:nightly\n上游 tip: ${UP_TIP:0:10}\n仓库: ${{ github.repository }}"
+              text="**版本**: \`$VERSION\`
+已 rebase 到上游最新并发布
+**镜像**: \`$IMAGE_NAME:$VERSION\` / \`$IMAGE_NAME:nightly\`
+**上游 tip**: \`${UP_TIP:0:10}\`
+**仓库**: [$REPO](https://github.com/$REPO)
+[查看构建详情]($RUN_URL)"
             else
-              text="版本: $VERSION\n强制重建（无上游变化）\n镜像: $IMAGE_NAME:$VERSION\n      $IMAGE_NAME:nightly\n仓库: ${{ github.repository }}"
+              text="**版本**: \`$VERSION\`
+强制重建（无上游变化）
+**镜像**: \`$IMAGE_NAME:$VERSION\` / \`$IMAGE_NAME:nightly\`
+**仓库**: [$REPO](https://github.com/$REPO)
+[查看构建详情]($RUN_URL)"
             fi
           fi
           payload=$(jq -n \
@@ -178,11 +195,17 @@ jobs:
             '{
               msg_type: "interactive",
               card: {
-                config: { wide_screen_mode: true },
-                header: { title: { tag: "plain_text", content: $title }, template: $color },
-                elements: [
-                  { tag: "div", text: { tag: "lark_md", content: $text } }
-                ]
+                schema: "2.0",
+                header: {
+                  title: { tag: "plain_text", content: $title },
+                  template: $color
+                },
+                body: {
+                  direction: "vertical",
+                  elements: [
+                    { tag: "markdown", content: $text }
+                  ]
+                }
               }
             }')
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEBHOOK" \
