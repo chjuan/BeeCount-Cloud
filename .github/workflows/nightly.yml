@@ -1,6 +1,6 @@
 name: nightly
 
-# 每天北京时间 00:00（UTC 16:00）自动 rebase dev 到上游最新并构建 nightly 镜像。
+# 每天北京时间 00:00（UTC 16:00）自动 rebase tzfix 到上游最新并构建 nightly 镜像。
 # 也可手动触发；冲突会失败并通知，需人工解决后重跑。
 on:
   schedule:
@@ -21,13 +21,13 @@ jobs:
   nightly:
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # 推 rebase 后的 dev 分支
+      contents: write      # 推 rebase 后的 tzfix 分支
       packages: write     # 推 GHCR
     steps:
-      - name: Checkout fork (dev 分支, 全量历史)
+      - name: Checkout fork (tzfix 分支, 全量历史)
         uses: actions/checkout@v4
         with:
-          ref: dev
+          ref: tzfix
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -48,21 +48,21 @@ jobs:
           set -euo pipefail
           DEV_TIP=$(git rev-parse HEAD)
           UP_TIP=$(git rev-parse upstream/main)
-          # merge-base：dev 和 upstream/main 的共同祖先
+          # merge-base：tzfix 和 upstream/main 的共同祖先
           BASE=$(git merge-base HEAD upstream/main || echo "")
           if [ -z "$BASE" ]; then
             # 没有共同祖先（不应该发生），按需要 rebase 处理
             echo "needed=true" >> "$GITHUB_OUTPUT"
           elif [ "$BASE" = "$UP_TIP" ]; then
-            # upstream/main 是 dev 的祖先 → 上游无新提交
+            # upstream/main 是 tzfix 的祖先 → 上游无新提交
             echo "needed=false" >> "$GITHUB_OUTPUT"
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
-          echo "dev_tip=$DEV_TIP" >> "$GITHUB_OUTPUT"
+          echo "tzfix_tip=$DEV_TIP" >> "$GITHUB_OUTPUT"
           echo "up_tip=$UP_TIP" >> "$GITHUB_OUTPUT"
 
-      - name: Rebase dev onto upstream/main
+      - name: Rebase tzfix onto upstream/main
         id: rebase
         if: steps.need.outputs.needed == 'true'
         run: |
@@ -70,10 +70,10 @@ jobs:
           git rebase upstream/main
           echo "new_tip=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Push rebased dev
+      - name: Push rebased tzfix
         if: steps.need.outputs.needed == 'true'
         run: |
-          git push --force-with-lease origin HEAD:dev
+          git push --force-with-lease origin HEAD:tzfix
 
       - name: Decide whether to build
         id: build
@@ -162,7 +162,7 @@ jobs:
             text="**状态**: \`$STATUS\`
 **上游 tip**: \`${UP_TIP:0:10}\`
 **仓库**: [$REPO](https://github.com/$REPO)
-若是 rebase 冲突，请到 dev 分支手动解决后重跑
+若是 rebase 冲突，请到 tzfix 分支手动解决后重跑
 [查看失败日志]($RUN_URL)"
           elif [ "$BUILD_DO" = "false" ]; then
             title="🌙 BeeCount-Cloud nightly（无变化）"

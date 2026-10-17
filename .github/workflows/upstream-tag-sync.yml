@@ -1,0 +1,159 @@
+name: upstream-tag-sync
+
+# 每 6 小时检查上游是否有新 release tag；有则自动把我们的补丁
+# cherry-pick 到新 tag commit 上，打 <tag>-tzfix 并推送，ghcr.yml 自动构建。
+# 也可手动触发并指定 tag。
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '指定要处理的上游 tag（如 1.7.1），留空自动检测最新'
+        required: false
+        type: string
+
+env:
+  UPSTREAM: TNT-Likely/BeeCount-Cloud
+  PATCH_SUFFIX: tzfix
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout fork（tzfix 分支，全量历史）
+        uses: actions/checkout@v4
+        with:
+          ref: tzfix
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream and fetch
+        run: |
+          git remote add upstream https://github.com/${{ env.UPSTREAM }}.git
+          git fetch upstream main --tags --prune
+
+      - name: Detect latest upstream tag
+        id: tag
+        run: |
+          set -euo pipefail
+          INPUT_TAG="${{ inputs.tag }}"
+          if [ -n "$INPUT_TAG" ]; then
+            LATEST="$INPUT_TAG"
+          else
+            # 上游最新 tag（排除我们自己的 -tzfix 后缀）
+            LATEST=$(git tag --list --sort=-v:refname | grep -v -- "-${PATCH_SUFFIX}$" | head -1)
+          fi
+          if [ -z "$LATEST" ]; then
+            echo "No upstream tags found"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          OUR_TAG="${LATEST}-${PATCH_SUFFIX}"
+          # 已处理过就跳过
+          if git rev-parse "$OUR_TAG" >/dev/null 2>&1; then
+            echo "Tag $OUR_TAG already exists, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "upstream_tag=$LATEST" >> "$GITHUB_OUTPUT"
+            echo "our_tag=$OUR_TAG" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "upstream_tag=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "our_tag=$OUR_TAG" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$(git rev-parse "$LATEST" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - name: Cherry-pick patches onto upstream tag
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          UP_TAG="${{ steps.tag.outputs.upstream_tag }}"
+          OUR_TAG="${{ steps.tag.outputs.our_tag }}"
+          # 从上游 tag 创建临时工作树
+          git worktree add /tmp/release "$UP_TAG"
+          cd /tmp/release
+          # 找出 tzfix 分支上不在 upstream/main 的提交（= 我们的补丁）
+          OUR_COMMITS=$(git rev-list --reverse upstream/main..origin/tzfix)
+          if [ -z "$OUR_COMMITS" ]; then
+            echo "No patch commits found on tzfix branch"
+            exit 1
+          fi
+          echo "Patches to apply:"
+          echo "$OUR_COMMITS" | while read -r sha; do git log --oneline -1 "$sha"; done
+          # 逐个 cherry-pick
+          echo "$OUR_COMMITS" | xargs git cherry-pick
+          echo "=== Result ==="
+          git log --oneline -5
+          # 打 tag
+          git tag "$OUR_TAG"
+          # 推 tag（触发 ghcr.yml 构建）
+          git push origin "$OUR_TAG"
+
+      - name: Notify Feishu
+        if: always()
+        env:
+          WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          SKIP: ${{ steps.tag.outputs.skip }}
+          UP_TAG: ${{ steps.tag.outputs.upstream_tag }}
+          OUR_TAG: ${{ steps.tag.outputs.our_tag }}
+          UP_SHA: ${{ steps.tag.outputs.upstream_sha }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "FEISHU_WEBHOOK_URL not configured, skipping"
+            exit 0
+          fi
+          if [ "$SKIP" = "true" ]; then
+            title="🔔 上游 tag 同步（已处理）"
+            color="blue"
+            text="上游 tag **$UP_TAG** 已处理过（\`$OUR_TAG\` 已存在）
+**仓库**: [$REPO](https://github.com/$REPO)"
+          elif [ "$STATUS" != "success" ]; then
+            title="❌ 上游 tag 同步失败"
+            color="red"
+            text="**上游 tag**: \`$UP_TAG\` (\`$UP_SHA\`)
+**目标 tag**: \`$OUR_TAG\`
+**仓库**: [$REPO](https://github.com/$REPO)
+cherry-pick 可能冲突，请到 tzfix 分支检查后手动重跑
+[查看失败日志]($RUN_URL)"
+          else
+            title="✅ 上游 tag 同步成功"
+            color="green"
+            text="已将补丁应用到上游 tag **$UP_TAG** 并打 tag \`$OUR_TAG\`
+ghcr.yml 将自动构建镜像 \`ghcr.io/chjuan/beecount-cloud:$OUR_TAG\`
+**上游 commit**: \`$UP_SHA\`
+**仓库**: [$REPO](https://github.com/$REPO)
+[查看同步日志]($RUN_URL)"
+          fi
+          payload=$(jq -n \
+            --arg title "$title" \
+            --arg text "$text" \
+            --arg color "$color" \
+            '{
+              msg_type: "interactive",
+              card: {
+                schema: "2.0",
+                header: {
+                  title: { tag: "plain_text", content: $title },
+                  template: $color
+                },
+                body: {
+                  direction: "vertical",
+                  elements: [
+                    { tag: "markdown", content: $text }
+                  ]
+                }
+              }
+            }')
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' -d "$payload")
+          echo "feishu response: $code"
