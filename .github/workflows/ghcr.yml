@@ -144,6 +144,9 @@ jobs:
           WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}
           VERSION: ${{ steps.vars.outputs.version }}
           STATUS: ${{ job.status }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PLATFORMS: ${{ steps.vars.outputs.platforms }}
         run: |
           if [ -z "$WEBHOOK" ]; then
             echo "FEISHU_WEBHOOK_URL not configured, skipping notification"
@@ -152,11 +155,18 @@ jobs:
           if [ "$STATUS" = "success" ]; then
             title="✅ BeeCount-Cloud 镜像发布成功"
             color="green"
-            text="版本: $VERSION\n镜像: $IMAGE_NAME:$VERSION\n架构: ${{ steps.vars.outputs.platforms }}\n仓库: ${{ github.repository }}\n详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            text="**版本**: \`$VERSION\`
+**镜像**: \`$IMAGE_NAME:$VERSION\` / \`$IMAGE_NAME:latest\`
+**架构**: \`$PLATFORMS\`
+**仓库**: [$REPO](https://github.com/$REPO)
+[查看构建详情]($RUN_URL)"
           else
             title="❌ BeeCount-Cloud 镜像发布失败"
             color="red"
-            text="版本: $VERSION\n仓库: ${{ github.repository }}\n请查看日志: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            text="**版本**: \`$VERSION\`
+**仓库**: [$REPO](https://github.com/$REPO)
+若测试或类型检查失败，请检查补丁是否与上游冲突
+[查看失败日志]($RUN_URL)"
           fi
           payload=$(jq -n \
             --arg title "$title" \
@@ -165,11 +175,17 @@ jobs:
             '{
               msg_type: "interactive",
               card: {
-                config: { wide_screen_mode: true },
-                header: { title: { tag: "plain_text", content: $title }, template: $color },
-                elements: [
-                  { tag: "div", text: { tag: "lark_md", content: $text } }
-                ]
+                schema: "2.0",
+                header: {
+                  title: { tag: "plain_text", content: $title },
+                  template: $color
+                },
+                body: {
+                  direction: "vertical",
+                  elements: [
+                    { tag: "markdown", content: $text }
+                  ]
+                }
               }
             }')
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEBHOOK" \
