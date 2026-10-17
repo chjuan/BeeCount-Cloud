@@ -27,7 +27,7 @@ import {
 import type { UserAdmin } from '@beecount/api-client'
 
 import { ListTableShell } from '../components/ListTableShell'
-import { formatIsoDateTime } from '../format'
+import { formatIsoDateTimeLocal } from '../format'
 
 type AdminUsersPanelProps = {
   rows: UserAdmin[]
@@ -300,7 +300,7 @@ export function AdminUsersPanel({
                       : t('enum.userStatus.disabled')}
                   </Badge>
                 </TableCell>
-                <TableCell>{formatIsoDateTime(row.created_at)}</TableCell>
+                <TableCell>{formatIsoDateTimeLocal(row.created_at)}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-3 whitespace-nowrap">
                     <button

@@ -1,8 +1,8 @@
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 # 6 位 hex，开头必须有 #；字母大小写都接受，validator 会归一化成大写。
@@ -210,6 +210,11 @@ class TwoFARegenerateResponse(BaseModel):
     recovery_codes: list[str]
 
 
+def _utc_iso(v: datetime) -> str:
+    aware = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+    return aware.astimezone(timezone.utc).isoformat()
+
+
 class DeviceOut(BaseModel):
     id: str
     name: str
@@ -221,6 +226,10 @@ class DeviceOut(BaseModel):
     last_seen_at: datetime
     created_at: datetime
     session_count: int = 1
+
+    @field_serializer("last_seen_at", "created_at")
+    def _ser_dt(self, v: datetime) -> str:
+        return _utc_iso(v)
 
 
 class SyncChangeIn(BaseModel):
@@ -947,6 +956,10 @@ class AdminDeviceOut(BaseModel):
     is_online: bool
     user_id: str
     user_email: str
+
+    @field_serializer("last_seen_at", "created_at")
+    def _ser_dt(self, v: datetime) -> str:
+        return _utc_iso(v)
 
 
 class AdminDeviceListOut(BaseModel):

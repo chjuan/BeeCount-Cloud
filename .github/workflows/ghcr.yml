@@ -1,0 +1,173 @@
+name: ghcr-publish
+
+# 打 x.y.z 格式 tag 自动发版；也支持手动指定版本。
+on:
+  push:
+    tags:
+      - '*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image tag to publish (e.g. 1.7.0-tzfix.1)'
+        required: true
+        type: string
+      push_latest:
+        description: 'Also push :latest'
+        required: false
+        type: boolean
+        default: true
+      platforms:
+        description: 'Target platforms'
+        required: false
+        type: string
+        default: 'linux/amd64,linux/arm64'
+
+env:
+  IMAGE_NAME: ghcr.io/chjuan/beecount-cloud
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read      # checkout
+      packages: write     # 推 GHCR
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run backend tests
+        env:
+          DATABASE_URL: 'sqlite:///:memory:'
+          SECRET_KEY: test-secret
+        run: pytest tests/ -x -q
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
+
+      - name: Typecheck web
+        working-directory: frontend/apps/web
+        run: npx tsc -b
+
+      - name: Resolve version
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+            push_latest="${{ inputs.push_latest }}"
+            platforms="${{ inputs.platforms }}"
+          else
+            version="${{ github.ref_name }}"
+            push_latest="true"
+            platforms="linux/amd64,linux/arm64"
+          fi
+          version_no_v="$version"
+          if [[ "$version" == v* ]]; then
+            version_no_v="${version#v}"
+          fi
+          echo "version=$version"             >> "$GITHUB_OUTPUT"
+          echo "version_no_v=$version_no_v"   >> "$GITHUB_OUTPUT"
+          echo "push_latest=$push_latest"     >> "$GITHUB_OUTPUT"
+          echo "platforms=$platforms"         >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.vars.outputs.version }}
+            type=raw,value=${{ steps.vars.outputs.version_no_v }},enable=${{ steps.vars.outputs.version_no_v != steps.vars.outputs.version }}
+            type=raw,value=latest,enable=${{ steps.vars.outputs.push_latest == 'true' }}
+          labels: |
+            org.opencontainers.image.title=BeeCount-Cloud
+            org.opencontainers.image.version=${{ steps.vars.outputs.version }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ steps.vars.outputs.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.vars.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Notify Feishu
+        # 无论构建成功/失败都通知；没配 secret 时自动跳过，不会让 workflow 变红。
+        if: always() && secrets.FEISHU_WEBHOOK_URL != ''
+        env:
+          WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          VERSION: ${{ steps.vars.outputs.version }}
+          STATUS: ${{ job.status }}
+        run: |
+          if [ "$STATUS" = "success" ]; then
+            title="✅ BeeCount-Cloud 镜像发布成功"
+            color="green"
+            text="版本: $VERSION\n镜像: $IMAGE_NAME:$VERSION\n架构: ${{ steps.vars.outputs.platforms }}\n仓库: ${{ github.repository }}\n详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          else
+            title="❌ BeeCount-Cloud 镜像发布失败"
+            color="red"
+            text="版本: $VERSION\n仓库: ${{ github.repository }}\n请查看日志: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          payload=$(jq -n \
+            --arg title "$title" \
+            --arg text "$text" \
+            --arg color "$color" \
+            '{
+              msg_type: "interactive",
+              card: {
+                config: { wide_screen_mode: true },
+                header: { title: { tag: "plain_text", content: $title }, template: $color },
+                elements: [
+                  { tag: "div", text: { tag: "lark_md", content: $text } }
+                ]
+              }
+            }')
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' -d "$payload")
+          echo "feishu response: $code"
