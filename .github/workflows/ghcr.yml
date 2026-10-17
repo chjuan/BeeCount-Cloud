@@ -139,12 +139,16 @@ jobs:
 
       - name: Notify Feishu
         # 无论构建成功/失败都通知；没配 secret 时自动跳过，不会让 workflow 变红。
-        if: always() && secrets.FEISHU_WEBHOOK_URL != ''
+        if: always()
         env:
           WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}
           VERSION: ${{ steps.vars.outputs.version }}
           STATUS: ${{ job.status }}
         run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "FEISHU_WEBHOOK_URL not configured, skipping notification"
+            exit 0
+          fi
           if [ "$STATUS" = "success" ]; then
             title="✅ BeeCount-Cloud 镜像发布成功"
             color="green"
