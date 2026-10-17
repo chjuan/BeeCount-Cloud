@@ -159,33 +159,18 @@ jobs:
           if [ "$STATUS" != "success" ]; then
             title="❌ BeeCount-Cloud nightly 失败"
             color="red"
-            text="**状态**: \`$STATUS\`
-**上游 tip**: \`${UP_TIP:0:10}\`
-**仓库**: [$REPO](https://github.com/$REPO)
-若是 rebase 冲突，请到 tzfix 分支手动解决后重跑
-[查看失败日志]($RUN_URL)"
+            text=$(printf '**状态**: `%s`\n**上游 tip**: `%s`\n**仓库**: [%s](https://github.com/%s)\n若是 rebase 冲突，请到 tzfix 分支手动解决后重跑\n[查看失败日志](%s)' "$STATUS" "${UP_TIP:0:10}" "$REPO" "$REPO" "$RUN_URL")
           elif [ "$BUILD_DO" = "false" ]; then
             title="🌙 BeeCount-Cloud nightly（无变化）"
             color="blue"
-            text="上游无新提交，跳过构建
-**上游 tip**: \`${UP_TIP:0:10}\`
-**仓库**: [$REPO](https://github.com/$REPO)"
+            text=$(printf '上游无新提交，跳过构建\n**上游 tip**: `%s`\n**仓库**: [%s](https://github.com/%s)' "${UP_TIP:0:10}" "$REPO" "$REPO")
           else
             title="🌙 BeeCount-Cloud nightly 构建成功"
             color="green"
             if [ "$NEEDED" = "true" ]; then
-              text="**版本**: \`$VERSION\`
-已 rebase 到上游最新并发布
-**镜像**: \`$IMAGE_NAME:$VERSION\` / \`$IMAGE_NAME:nightly\`
-**上游 tip**: \`${UP_TIP:0:10}\`
-**仓库**: [$REPO](https://github.com/$REPO)
-[查看构建详情]($RUN_URL)"
+              text=$(printf '**版本**: `%s`\n已 rebase 到上游最新并发布\n**镜像**: `%s:%s` / `%s:nightly`\n**上游 tip**: `%s`\n**仓库**: [%s](https://github.com/%s)\n[查看构建详情](%s)' "$VERSION" "$IMAGE_NAME" "$VERSION" "$IMAGE_NAME" "${UP_TIP:0:10}" "$REPO" "$REPO" "$RUN_URL")
             else
-              text="**版本**: \`$VERSION\`
-强制重建（无上游变化）
-**镜像**: \`$IMAGE_NAME:$VERSION\` / \`$IMAGE_NAME:nightly\`
-**仓库**: [$REPO](https://github.com/$REPO)
-[查看构建详情]($RUN_URL)"
+              text=$(printf '**版本**: `%s`\n强制重建（无上游变化）\n**镜像**: `%s:%s` / `%s:nightly`\n**仓库**: [%s](https://github.com/%s)\n[查看构建详情](%s)' "$VERSION" "$IMAGE_NAME" "$VERSION" "$IMAGE_NAME" "$REPO" "$REPO" "$RUN_URL")
             fi
           fi
           payload=$(jq -n \

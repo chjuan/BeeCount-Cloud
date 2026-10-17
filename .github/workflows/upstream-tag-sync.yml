@@ -115,24 +115,15 @@ jobs:
           if [ "$SKIP" = "true" ]; then
             title="🔔 上游 tag 同步（已处理）"
             color="blue"
-            text="上游 tag **$UP_TAG** 已处理过（\`$OUR_TAG\` 已存在）
-**仓库**: [$REPO](https://github.com/$REPO)"
+            text=$(printf '上游 tag **%s** 已处理过（`%s` 已存在）\n**仓库**: [%s](https://github.com/%s)' "$UP_TAG" "$OUR_TAG" "$REPO" "$REPO")
           elif [ "$STATUS" != "success" ]; then
             title="❌ 上游 tag 同步失败"
             color="red"
-            text="**上游 tag**: \`$UP_TAG\` (\`$UP_SHA\`)
-**目标 tag**: \`$OUR_TAG\`
-**仓库**: [$REPO](https://github.com/$REPO)
-cherry-pick 可能冲突，请到 tzfix 分支检查后手动重跑
-[查看失败日志]($RUN_URL)"
+            text=$(printf '**上游 tag**: `%s` (`%s`)\n**目标 tag**: `%s`\n**仓库**: [%s](https://github.com/%s)\ncherry-pick 可能冲突，请到 tzfix 分支检查后手动重跑\n[查看失败日志](%s)' "$UP_TAG" "$UP_SHA" "$OUR_TAG" "$REPO" "$REPO" "$RUN_URL")
           else
             title="✅ 上游 tag 同步成功"
             color="green"
-            text="已将补丁应用到上游 tag **$UP_TAG** 并打 tag \`$OUR_TAG\`
-ghcr.yml 将自动构建镜像 \`ghcr.io/chjuan/beecount-cloud:$OUR_TAG\`
-**上游 commit**: \`$UP_SHA\`
-**仓库**: [$REPO](https://github.com/$REPO)
-[查看同步日志]($RUN_URL)"
+            text=$(printf '已将补丁应用到上游 tag **%s** 并打 tag `%s`\nghcr.yml 将自动构建镜像 `ghcr.io/chjuan/beecount-cloud:%s`\n**上游 commit**: `%s`\n**仓库**: [%s](https://github.com/%s)\n[查看同步日志](%s)' "$UP_TAG" "$OUR_TAG" "$OUR_TAG" "$UP_SHA" "$REPO" "$REPO" "$RUN_URL")
           fi
           payload=$(jq -n \
             --arg title "$title" \
