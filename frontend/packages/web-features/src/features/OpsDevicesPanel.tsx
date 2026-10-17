@@ -8,7 +8,7 @@ import {
 
 import type { AdminDevice } from '@beecount/api-client'
 
-import { formatIsoDateTime } from '../format'
+import { formatIsoDateTimeLocal } from '../format'
 
 // 根据 platform 选一个图标 + 语义色。
 function deviceIcon(row: AdminDevice): { glyph: string; color: string } {
@@ -191,14 +191,14 @@ export function OpsDevicesPanel({ rows, onReload }: OpsDevicesPanelProps) {
                           <span>{t('ops.device.header.lastSeen')}</span>
                           <span
                             className="font-medium text-foreground"
-                            title={formatIsoDateTime(row.last_seen_at)}
+                            title={formatIsoDateTimeLocal(row.last_seen_at)}
                           >
                             {timeAgo(row.last_seen_at)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-2">
                           <span>{t('ops.device.header.firstSeen')}</span>
-                          <span title={formatIsoDateTime(row.created_at)}>
+                          <span title={formatIsoDateTimeLocal(row.created_at)}>
                             {timeAgo(row.created_at)}
                           </span>
                         </div>
