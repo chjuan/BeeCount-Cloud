@@ -112,11 +112,12 @@ jobs:
             echo "FEISHU_WEBHOOK_URL not configured, skipping"
             exit 0
           fi
+          # 上游无新 tag（已处理过）→ 静默退出，不打扰
           if [ "$SKIP" = "true" ]; then
-            title="🔔 上游 tag 同步（已处理）"
-            color="blue"
-            text=$(printf '上游 tag **%s** 已处理过（`%s` 已存在）\n**仓库**: [%s](https://github.com/%s)' "$UP_TAG" "$OUR_TAG" "$REPO" "$REPO")
-          elif [ "$STATUS" != "success" ]; then
+            echo "Upstream tag already synced, no notification"
+            exit 0
+          fi
+          if [ "$STATUS" != "success" ]; then
             title="❌ 上游 tag 同步失败"
             color="red"
             text=$(printf '**上游 tag**: `%s` (`%s`)\n**目标 tag**: `%s`\n**仓库**: [%s](https://github.com/%s)\ncherry-pick 可能冲突，请到 tzfix 分支检查后手动重跑\n[查看失败日志](%s)' "$UP_TAG" "$UP_SHA" "$OUR_TAG" "$REPO" "$REPO" "$RUN_URL")
